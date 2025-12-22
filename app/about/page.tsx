@@ -17,7 +17,7 @@ export default function AboutPage() {
       role: "Si Paling UI/UX 🎨",
       desc: "Yang rewel soal warna ijo harus estetik dan pixel perfect.",
       color: "bg-pink-100 text-pink-700 border-pink-200",
-      image: "/naura.jpg" // <--- Jangan lupa masukkan foto naura.jpg di folder public
+      image: "/Naura.jpg" // <--- Jangan lupa masukkan foto naura.jpg di folder public
     },
     {
       name: "Sahwa",
