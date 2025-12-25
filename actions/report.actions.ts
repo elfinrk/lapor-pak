@@ -12,8 +12,10 @@ import { revalidatePath } from "next/cache";
  */
 export async function createReportAction(formData: FormData) {
   const user = await getCurrentUser();
+  
+  // PROTEKSI GANDA: Cek lagi di sini
   if (!user) {
-    return { success: false, message: "Anda harus login untuk mengirim laporan." };
+    return { success: false, message: "Akses ditolak. Anda harus login." };
   }
 
   const category = String(formData.get("category") || "").trim();
