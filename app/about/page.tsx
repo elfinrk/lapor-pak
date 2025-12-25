@@ -4,37 +4,36 @@ import Link from "next/link";
 export default function AboutPage() {
   // --- DATA ANGGOTA TIM ---
   // Pastikan file foto (misal: elfin.jpg) sudah ada di folder 'public'
-  const teamMembers = [
-    {
-      name: "Elfin", 
-      role: "Si Paling Backend 💻",
-      desc: "Yang begadang ngurusin database biar gak error pas demo.",
-      color: "bg-blue-100 text-blue-700 border-blue-200",
-      image: "/elfin.jpg" // <--- Foto asli
-    },
-    {
-      name: "Naura",
-      role: "Si Paling UI/UX 🎨",
-      desc: "Yang rewel soal warna ijo harus estetik dan pixel perfect.",
-      color: "bg-pink-100 text-pink-700 border-pink-200",
-      image: "/Naura.jpg" 
-    },
-    {
-      name: "Sahwa",
-      role: "Si Paling Laporan 📄",
-      desc: "Juru tulis dokumentasi biar tugas besar aman terkendali.",
-      color: "bg-yellow-100 text-yellow-700 border-yellow-200",
-      image: "/Sahwa.jpg"
-      // Jika image dihapus/kosong, otomatis pakai kartun
-    },
-    {
-      name: "Kayla",
-      role: "Si Paling Presentasi 🎤",
-      desc: "Jago ngeles kalau ditanya dosen pas sidang.",
-      color: "bg-purple-100 text-purple-700 border-purple-200",
-      image: "/Kayla.jpg"
-    },
-  ];
+ const teamMembers = [
+  {
+    name: "Elfin", 
+    role: "Si Paling Backend 💻",
+    desc: "Bagian ngurusin sistem sama data di belakang layar biar lancar.",
+    color: "bg-blue-100 text-blue-700 border-blue-200",
+    image: "/elfin.jpg"
+  },
+  {
+    name: "Naura",
+    role: "Si Paling Frontend 🎨",
+    desc: "Bagian yang ngerapihin tampilan depan biar enak dilihat user.",
+    color: "bg-pink-100 text-pink-700 border-pink-200",
+    image: "/Naura.jpg" 
+  },
+  {
+    name: "Sahwa",
+    role: "Si Paling Dokumentasi 📄",
+    desc: "Bagian nyusun berkas sama laporan biar tugas kita lengkap.",
+    color: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    image: "/Sahwa.jpg"
+  },
+  {
+    name: "Kayla",
+    role: "Si Paling Design 🖌️",
+    desc: "Bagian bikin konsep sama visual aplikasi biar kelihatan menarik.",
+    color: "bg-purple-100 text-purple-700 border-purple-200",
+    image: "/Kayla.jpg"
+  },
+];
 
   return (
     <div className="min-h-screen bg-[#f8fcf9] py-12 px-4 relative overflow-hidden font-sans">
@@ -155,7 +154,7 @@ export default function AboutPage() {
 
         <div className="mt-20 text-center pb-12">
             <Link href="/contact" className="group text-[#1f6f3f] font-semibold text-lg inline-flex items-center gap-2 hover:text-emerald-600 transition-colors">
-                <span>Punya saran buat tugas kami? Hubungi disini</span>
+                <span>Punya saran buat WEB kami? Hubungi disini</span>
                 <span className="group-hover:translate-x-1 transition-transform">&rarr;</span>
             </Link>
         </div>
