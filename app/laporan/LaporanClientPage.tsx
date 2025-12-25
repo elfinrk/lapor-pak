@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { createReportAction } from "@/actions/report.actions";
 import dynamic from "next/dynamic";
 import imageCompression from "browser-image-compression";
@@ -25,42 +25,42 @@ export default function LaporanFormClient() {
     address: string;
   } | null>(null);
 
-  // State Submit Utama
+  // State Submit & Loading UI
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadingText, setLoadingText] = useState("Kirim Laporan");
+  const [loadingText, setLoadingText] = useState("Kirim Laporan"); // Teks tombol berubah-ubah
 
   // --- STATE KHUSUS FOTO ---
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
-  const [isPhotoReady, setIsPhotoReady] = useState(false); // Penanda foto "siap" secara visual
+  const [isPhotoReady, setIsPhotoReady] = useState(false); // Untuk memicu tampilan centang hijau
 
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- HANDLE FILE CHANGE (Hanya Visual) ---
+  // --- HANDLE FILE CHANGE (Visual Saja) ---
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     
-    // Reset state foto
+    // Reset dulu
     setFile(null);
     setFileError("");
     setIsPhotoReady(false);
 
     if (selectedFile) {
-      // Validasi Tipe
+      // 1. Validasi Tipe
       if (!selectedFile.type.startsWith("image/")) {
         setFileError("⚠️ File harus berupa gambar.");
         event.target.value = "";
         return;
       }
-      // Validasi Ukuran Awal (10MB limit hard)
+      // 2. Validasi Ukuran (Max 10MB sebelum kompresi)
       if (selectedFile.size > 10 * 1024 * 1024) {
          setFileError("⚠️ File terlalu besar (Max 10MB).");
          return;
       }
 
       setFile(selectedFile);
-      setIsPhotoReady(true); // Tampilkan UI hijau "Foto Siap"
+      setIsPhotoReady(true); // Munculkan kotak hijau "Foto Siap"
     }
   };
 
@@ -74,7 +74,7 @@ export default function LaporanFormClient() {
     }
   };
 
-  // --- HANDLE SUBMIT FORM (LOGIKA UTAMA) ---
+  // --- HANDLE SUBMIT (LOGIKA DIRECT UPLOAD) ---
   const handleFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -84,38 +84,31 @@ export default function LaporanFormClient() {
     setLoadingText("🔄 Mempersiapkan...");
 
     try {
-      // 1. Validasi Manual
+      // 1. Validasi Input Manual
       const category = formData.get("category");
       const description = formData.get("description");
 
-      if (!category || !description) {
-        throw new Error("Harap isi kategori dan deskripsi.");
-      }
-
-      if (!selectedLocation) {
-        throw new Error("Harap pilih titik lokasi pada peta.");
-      }
+      if (!category || !description) throw new Error("Harap isi kategori dan deskripsi.");
+      if (!selectedLocation) throw new Error("Harap pilih titik lokasi pada peta.");
 
       let finalPhotoUrl = "";
 
-      // 2. PROSES UPLOAD KE CLOUDINARY (Direct Upload Logic)
+      // 2. PROSES UPLOAD FOTO (Jika ada file)
       if (file) {
+        // A. Kompresi
         setLoadingText("⏳ Mengompres Foto...");
-        
-        // A. Kompresi Gambar
-        const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1024, useWebWorker: true };
-        let compressedFile;
+        let compressedFile = file;
         try {
+            const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1024, useWebWorker: true };
             compressedFile = await imageCompression(file, options);
         } catch (err) {
-            console.error(err);
-            compressedFile = file; // Fallback pakai file asli jika gagal kompres
+            console.error("Gagal kompresi, pakai file asli", err);
         }
 
-        setLoadingText("☁️ Mengupload Foto...");
-
-        // B. Siapkan Data Upload
-        // Gunakan ENV Variable (Pastikan sudah redeploy Vercel)
+        // B. Upload ke Cloudinary
+        setLoadingText("☁️ Mengupload ke Cloud...");
+        
+        // Gunakan Environment Variable
         const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dqnkziua0"; 
         const uploadPreset = "ml_default"; 
 
@@ -123,7 +116,7 @@ export default function LaporanFormClient() {
         uploadData.append("file", compressedFile);
         uploadData.append("upload_preset", uploadPreset);
 
-        // C. Fetch ke Cloudinary
+        // Fetch langsung ke Cloudinary
         const cloudinaryRes = await fetch(
           `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
           { method: "POST", body: uploadData }
@@ -138,7 +131,7 @@ export default function LaporanFormClient() {
         finalPhotoUrl = cloudinaryData.secure_url;
       }
 
-      // 3. KIRIM DATA TEXT KE SERVER DATABASE
+      // 3. KIRIM DATA KE DATABASE
       setLoadingText("💾 Menyimpan Laporan...");
 
       const dataToSend = new FormData();
@@ -147,7 +140,7 @@ export default function LaporanFormClient() {
       dataToSend.append("location", selectedLocation.address);
       dataToSend.append("latitude", selectedLocation.lat.toString());
       dataToSend.append("longitude", selectedLocation.lng.toString());
-      dataToSend.append("photoUrl", finalPhotoUrl); // URL Foto dari Cloudinary
+      dataToSend.append("photoUrl", finalPhotoUrl); // URL hasil upload tadi
 
       const res = await createReportAction(dataToSend);
 
@@ -155,14 +148,13 @@ export default function LaporanFormClient() {
         setMessage("✅ BERHASIL! Laporan telah dikirim.");
         formRef.current?.reset();
         setSelectedLocation(null);
-        handleRemovePhoto();
+        handleRemovePhoto(); // Hilangkan kotak hijau foto
       } else {
         throw new Error(res?.message || "Gagal menyimpan laporan.");
       }
 
     } catch (err: any) {
       console.error("SUBMIT ERROR:", err);
-      // Tampilkan error spesifik agar tahu salah dimana
       setMessage(`❌ ${err.message}`);
     } finally {
       setIsSubmitting(false);
@@ -221,7 +213,7 @@ export default function LaporanFormClient() {
             />
           </div>
 
-          {/* FOTO BUKTI (TAMPILAN BAGUS) */}
+          {/* FOTO BUKTI (TAMPILAN YANG ANDA SUKA) */}
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-700">Foto Bukti</label>
             
@@ -242,7 +234,7 @@ export default function LaporanFormClient() {
                <p className="text-xs text-red-600 font-bold mt-1 animate-pulse">{fileError}</p>
             )}
 
-            {/* ✅ KONFIRMASI FOTO SIAP (Hanya Visual) */}
+            {/* ✅ KONFIRMASI FOTO SIAP (KOTAK HIJAU) */}
             {isPhotoReady && file && (
               <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center justify-between">
                 <div className="flex items-center gap-3 overflow-hidden">
