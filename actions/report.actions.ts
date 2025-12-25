@@ -2,11 +2,14 @@
 
 import { connectDB } from "@/lib/db";
 import { Report } from "@/models/report.model";
-import { User } from "@/models/user.model"; // Wajib import model User untuk populate
+import { User } from "@/models/user.model"; 
 import { getCurrentUser } from "@/lib/auth";
-import { uploadImageBuffer, REPORT_FOLDER } from "@/lib/cloudinary";
 import { revalidatePath } from "next/cache";
 
+/**
+ * Menerima data laporan.
+ * Foto sudah diupload di client, jadi kita hanya menerima photoUrl (string).
+ */
 export async function createReportAction(formData: FormData) {
   const user = await getCurrentUser();
   if (!user) {
@@ -16,36 +19,27 @@ export async function createReportAction(formData: FormData) {
   const category = String(formData.get("category") || "").trim();
   const location = String(formData.get("location") || "").trim();
   const description = String(formData.get("description") || "").trim();
-  const photoFile = formData.get("photo") as File | null;
+  
+  // Ambil photoUrl yang dikirim dari LaporanFormClient (Direct Upload)
+  const photoUrl = String(formData.get("photoUrl") || "").trim();
   
   if (!category || !location || !description) {
     return { success: false, message: "Semua field wajib diisi." };
-  }
-
-  let photoUrl = "";
-
-  if (photoFile && photoFile.size > 0) {
-    try {
-      const buffer = Buffer.from(await photoFile.arrayBuffer());
-      photoUrl = await uploadImageBuffer(buffer, REPORT_FOLDER);
-    } catch (err) {
-      console.error("Cloudinary upload error:", err);
-      return { success: false, message: "Gagal mengupload foto." };
-    }
   }
 
   try {
     await connectDB();
 
     const report = await Report.create({
-      userId: user.id, // Pastikan di model Report field-nya bernama 'userId'
+      userId: user.id,
       category,
       location,
       description,
-      photoUrl, 
+      photoUrl, // Menyimpan URL Cloudinary langsung ke database
       status: "pending",
     });
 
+    // Segarkan data di halaman terkait
     revalidatePath("/dashboard");
     revalidatePath("/admin");
 
@@ -55,15 +49,18 @@ export async function createReportAction(formData: FormData) {
       reportId: report._id.toString(),
     };
   } catch (err) {
+    console.error("Database Error:", err);
     return { success: false, message: "Gagal menyimpan ke database." };
   }
 }
 
+/**
+ * Mengambil semua laporan untuk Panel Admin (dengan nama pelapor)
+ */
 export async function getAllReports() {
   try {
     await connectDB();
     
-    // PENTING: .populate('userId', 'name') mengambil field 'name' dari tabel User
     const reports = await Report.find()
       .populate("userId", "name") 
       .sort({ createdAt: -1 })
@@ -71,13 +68,13 @@ export async function getAllReports() {
 
     return reports.map((r: any) => ({
       id: r._id.toString(),
-      authorName: r.userId?.name || "User Tidak Ditemukan", // Ini agar tidak "Anonim"
+      authorName: r.userId?.name || "User Tidak Ditemukan",
       category: r.category,
       location: r.location,
       description: r.description,
       status: r.status,
       createdAt: r.createdAt.toISOString(),
-      photoUrl: r.photoUrl, // URL gambar dari Cloudinary
+      photoUrl: r.photoUrl,
     }));
   } catch (err) {
     console.error("Error getAllReports:", err);
@@ -85,64 +82,74 @@ export async function getAllReports() {
   }
 }
 
-export async function getReportStats() {
-  await connectDB();
-  return {
-    total: await Report.countDocuments(),
-    pending: await Report.countDocuments({ status: "pending" }),
-    proses: await Report.countDocuments({ status: "proses" }),
-    selesai: await Report.countDocuments({ status: "selesai" }),
-  };
-}
-
-export async function updateReportStatus(id: string, status: string) {
-  await connectDB();
-  await Report.findByIdAndUpdate(id, { status });
-  return { success: true };
-}
-
-export async function deleteReportAction(id: string) {
-  try {
-    await connectDB();
-    // Jika ada sistem hapus file Cloudinary, bisa ditambahkan di sini
-    await Report.findByIdAndDelete(id);
-    return { success: true, message: "Laporan dihapus" };
-  } catch (err) {
-    return { success: false, message: "Gagal menghapus" };
-  }
-}
-
-// actions/report.actions.ts
-
-// ... (kode lainnya seperti connectDB, Report model, dll)
-
 /**
- * Fungsi untuk mengambil daftar laporan berdasarkan ID User tertentu
- * Digunakan di halaman Dashboard
+ * Mengambil laporan khusus milik user yang sedang login
  */
 export async function getReportsForUser(userId: string) {
   try {
-    await connectDB(); // Pastikan koneksi DB terpanggil
+    await connectDB();
 
-    // Mencari laporan yang memiliki userId sesuai dengan parameter
     const reports = await Report.find({ userId })
-      .sort({ createdAt: -1 }) // Urutkan dari yang terbaru
+      .sort({ createdAt: -1 })
       .lean();
 
-    // Mapping data agar aman dikirim ke Client Component
     return reports.map((r: any) => ({
       id: r._id.toString(),
       category: r.category,
       location: r.location,
       description: r.description,
       status: r.status,
-      createdAt: r.createdAt.toISOString(), // Convert ke string untuk menghindari error serialisasi
+      createdAt: r.createdAt.toISOString(),
       photoUrl: r.photoUrl || "",
     }));
   } catch (err) {
     console.error("Gagal mengambil laporan user:", err);
-    return []; // Kembalikan array kosong jika terjadi error
+    return [];
   }
 }
 
-// ... (fungsi lainnya seperti getAllReports, getReportStats, dll)
+/**
+ * Mengambil statistik laporan untuk Panel Admin
+ */
+export async function getReportStats() {
+  try {
+    await connectDB();
+    return {
+      total: await Report.countDocuments(),
+      pending: await Report.countDocuments({ status: "pending" }),
+      proses: await Report.countDocuments({ status: "proses" }),
+      selesai: await Report.countDocuments({ status: "selesai" }),
+    };
+  } catch (err) {
+    return { total: 0, pending: 0, proses: 0, selesai: 0 };
+  }
+}
+
+/**
+ * Update status laporan oleh Admin
+ */
+export async function updateReportStatus(id: string, status: string) {
+  try {
+    await connectDB();
+    await Report.findByIdAndUpdate(id, { status });
+    revalidatePath("/admin");
+    revalidatePath("/dashboard");
+    return { success: true };
+  } catch (err) {
+    return { success: false };
+  }
+}
+
+/**
+ * Menghapus laporan oleh Admin
+ */
+export async function deleteReportAction(id: string) {
+  try {
+    await connectDB();
+    await Report.findByIdAndDelete(id);
+    revalidatePath("/admin");
+    return { success: true, message: "Laporan berhasil dihapus" };
+  } catch (err) {
+    return { success: false, message: "Gagal menghapus laporan" };
+  }
+}

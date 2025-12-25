@@ -2,96 +2,96 @@
 
 import { useState, useRef } from "react";
 import { createReportAction } from "@/actions/report.actions";
-import { useFormStatus } from "react-dom";
 import dynamic from "next/dynamic";
-// Import library kompresi
 import imageCompression from "browser-image-compression";
 
+// Load MapPicker tanpa Server Side Rendering (SSR)
 const MapPicker = dynamic(() => import("../../components/MapPicker"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-[300px] bg-slate-100 rounded-lg flex items-center justify-center text-slate-400 animate-pulse border border-slate-200">
-      <p>Memuat Peta...</p>
+    <div className="w-full h-[300px] bg-slate-100 animate-pulse flex items-center justify-center text-slate-400 rounded-lg border border-slate-200">
+      Memuat Peta...
     </div>
   ),
 });
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button
-      type="submit"
-      disabled={pending}
-      className="w-full bg-[#1f6f3f] text-white font-bold py-3 rounded-xl hover:bg-[#185632] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-    >
-      {pending ? "Sedang Mengirim Laporan..." : "Kirim Laporan"}
-    </button>
-  );
-}
-
 export default function LaporanFormClient() {
   const [message, setMessage] = useState("");
-  const [selectedLocation, setSelectedLocation] = useState<{
-    lat: number;
-    lng: number;
-    address: string;
-  } | null>(null);
-  
-  const [isCompressing, setIsCompressing] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
-  const handleAction = async (formData: FormData) => {
+  const handleAction = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault(); // Mencegah reload halaman
+    setLoading(true);
     setMessage("");
     
+    // Ambil data asli dari form
+    const formData = new FormData(e.currentTarget);
+    const photo = formData.get("photo") as File;
+
     // 1. Validasi Lokasi
     if (!selectedLocation) {
-      setMessage("Harap pilih lokasi pada peta.");
+      setMessage("❌ Harap pilih lokasi pada peta.");
+      setLoading(false);
       return;
     }
 
-    // 2. Ambil Foto dari FormData
-    const photo = formData.get("photo") as File;
-    
-    // 3. LOGIKA KOMPRESI (Mencegah Vercel Timeout)
-    if (photo && photo.size > 0) {
-      setIsCompressing(true);
-      const options = {
-        maxSizeMB: 1,           // Target ukuran di bawah 1MB
-        maxWidthOrHeight: 1280, // Resolusi maksimal (HD)
-        useWebWorker: true,
-      };
-      
-      try {
-        const compressedFile = await imageCompression(photo, options);
-        // Ganti file asli yang besar dengan file hasil kompresi
-        formData.set("photo", compressedFile);
-        console.log(`Original size: ${(photo.size / 1024 / 1024).toFixed(2)} MB`);
-        console.log(`Compressed size: ${(compressedFile.size / 1024 / 1024).toFixed(2)} MB`);
-      } catch (error) {
-        console.error("Gagal kompres foto:", error);
-      } finally {
-        setIsCompressing(false);
-      }
-    }
-
-    // 4. Tambahkan data lokasi ke FormData
-    formData.set("location", selectedLocation.address);
-    formData.append("latitude", selectedLocation.lat.toString());
-    formData.append("longitude", selectedLocation.lng.toString());
+    let finalPhotoUrl = "";
 
     try {
-      // 5. Kirim ke Server Action
-      const res = await createReportAction(formData);
+      // 2. PROSES KOMPRESI & DIRECT UPLOAD (Jika ada foto)
+      if (photo && photo.size > 0) {
+        // Kompresi agar di bawah 1MB untuk menghindari timeout
+        const options = { maxSizeMB: 0.8, maxWidthOrHeight: 1024, useWebWorker: true };
+        const compressedFile = await imageCompression(photo, options);
+
+        // Konfigurasi Cloudinary
+        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dqnkziua0";
+        const uploadPreset = "ml_default"; // Pastikan sudah "Unsigned" di dashboard Cloudinary
+
+        const uploadData = new FormData();
+        uploadData.append("file", compressedFile);
+        uploadData.append("upload_preset", uploadPreset);
+
+        // Upload langsung dari browser ke Cloudinary (Direct Upload)
+        const cloudinaryRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+          { method: "POST", body: uploadData }
+        );
+
+        const cloudinaryData = await cloudinaryRes.json();
+        
+        if (cloudinaryData.secure_url) {
+          finalPhotoUrl = cloudinaryData.secure_url;
+        } else {
+          throw new Error("Gagal mendapatkan URL foto dari Cloudinary.");
+        }
+      }
+
+      // 3. KIRIM DATA TEKS KE DATABASE
+      const dataToSend = new FormData();
+      dataToSend.append("category", formData.get("category") as string);
+      dataToSend.append("description", formData.get("description") as string);
+      dataToSend.append("location", selectedLocation.address);
+      dataToSend.append("latitude", selectedLocation.lat.toString());
+      dataToSend.append("longitude", selectedLocation.lng.toString());
+      dataToSend.append("photoUrl", finalPhotoUrl); // Kirim URL hasil upload
+
+      const res = await createReportAction(dataToSend);
       
       if (res?.success) {
-        setMessage("✅ " + res.message);
+        setMessage("✅ Berhasil dikirim! Silakan cek menu Riwayat.");
         formRef.current?.reset();
         setSelectedLocation(null);
       } else {
-        setMessage("❌ " + (res?.message || "Gagal mengirim laporan."));
+        setMessage("❌ " + (res?.message || "Gagal menyimpan laporan."));
       }
     } catch (err) {
-      setMessage("❌ Terjadi kesalahan jaringan. Coba lagi.");
+      console.error("Error Pengiriman:", err);
+      setMessage("❌ Gagal mengirim. Pastikan Upload Preset Cloudinary adalah 'Unsigned'.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -99,13 +99,17 @@ export default function LaporanFormClient() {
     <div className="min-h-screen bg-[#f8fcf9] py-10 px-4 flex justify-center">
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-green-100 p-8">
         <h1 className="text-2xl font-bold text-slate-800 mb-2">Buat Laporan</h1>
-        <p className="text-slate-500 mb-6">Sampaikan masalah lingkungan di sekitarmu.</p>
+        <p className="text-slate-500 mb-6 text-sm">Sampaikan masalah lingkungan di sekitarmu.</p>
 
-        <form ref={formRef} action={handleAction} className="space-y-5">
+        <form ref={formRef} onSubmit={handleAction} className="space-y-5">
           {/* KATEGORI */}
           <div className="space-y-1">
             <label className="text-sm font-semibold text-slate-700">Kategori *</label>
-            <select name="category" required className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 bg-white outline-none focus:ring-2 focus:ring-green-500">
+            <select 
+              name="category" 
+              required 
+              className="w-full border border-slate-300 rounded-lg p-3 text-slate-700 focus:ring-2 focus:ring-green-500 outline-none"
+            >
               <option value="" disabled selected>Pilih Kategori...</option>
               <option value="lingkungan">Lingkungan</option>
               <option value="fasilitas">Fasilitas Umum</option>
@@ -127,7 +131,12 @@ export default function LaporanFormClient() {
           {/* DESKRIPSI */}
           <div className="space-y-1">
             <label className="text-sm font-semibold text-slate-700">Deskripsi *</label>
-            <textarea name="description" required className="w-full border border-slate-300 rounded-lg px-3 py-2 text-slate-700 h-32 focus:ring-2 focus:ring-green-500 outline-none resize-none" placeholder="Jelaskan detail kejadian..."></textarea>
+            <textarea 
+              name="description" 
+              required 
+              className="w-full border border-slate-300 rounded-lg p-3 h-32 focus:ring-2 focus:ring-green-500 outline-none resize-none" 
+              placeholder="Jelaskan detail kejadian..."
+            ></textarea>
           </div>
 
           {/* FOTO BUKTI */}
@@ -139,14 +148,23 @@ export default function LaporanFormClient() {
               accept="image/*" 
               className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100" 
             />
-            {isCompressing && <p className="text-[10px] text-blue-500 animate-pulse">Sedang mengoptimalkan foto...</p>}
           </div>
 
-          <SubmitButton />
+          {/* TOMBOL SUBMIT */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-[#1f6f3f] text-white font-bold py-3 rounded-xl hover:bg-[#185632] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? "🔄 Memproses Laporan..." : "Kirim Laporan"}
+          </button>
         </form>
 
+        {/* PESAN STATUS */}
         {message && (
-          <div className={`mt-4 p-3 rounded-lg text-center text-sm font-medium ${message.includes("✅") ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+          <div className={`mt-4 p-3 rounded-lg text-center text-sm font-medium ${
+            message.includes("✅") ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+          }`}>
             {message}
           </div>
         )}
