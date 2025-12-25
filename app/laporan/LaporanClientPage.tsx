@@ -24,9 +24,8 @@ export default function LaporanFormClient() {
   const handleAction = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault(); // Mencegah reload halaman
     setLoading(true);
-    setMessage("");
+    setMessage(""); // Reset pesan
     
-    // Ambil data asli dari form
     const formData = new FormData(e.currentTarget);
     const photo = formData.get("photo") as File;
 
@@ -37,24 +36,40 @@ export default function LaporanFormClient() {
       return;
     }
 
+    // --- DEBUG 1: Cek Cloud Name ---
+    // Kita gunakan fallback string hardcode agar tetap jalan meski env belum masuk Vercel
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dqnkziua0";
+    
+    if (!cloudName) {
+      setMessage("❌ Error Fatal: Cloud Name tidak ditemukan / kosong.");
+      setLoading(false);
+      return;
+    }
+
     let finalPhotoUrl = "";
 
     try {
-      // 2. PROSES KOMPRESI & DIRECT UPLOAD (Jika ada foto)
+      // 2. PROSES UPLOAD FOTO (Jika ada)
       if (photo && photo.size > 0) {
-        // Kompresi agar di bawah 1MB untuk menghindari timeout
-        const options = { maxSizeMB: 0.8, maxWidthOrHeight: 1024, useWebWorker: true };
-        const compressedFile = await imageCompression(photo, options);
+        setMessage("⏳ Mengompres foto...");
 
-        // Konfigurasi Cloudinary
-        const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || "dqnkziua0";
-        const uploadPreset = "ml_default"; // Pastikan sudah "Unsigned" di dashboard Cloudinary
+        // A. Kompresi
+        const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1024, useWebWorker: true };
+        let compressedFile;
+        try {
+            compressedFile = await imageCompression(photo, options);
+        } catch (err) {
+            throw new Error("Gagal kompresi di HP. Coba foto lain.");
+        }
 
+        setMessage("⏳ Mengupload ke Cloudinary...");
+
+        // B. Upload ke Cloudinary
+        const uploadPreset = "ml_default"; // Pastikan SAMA PERSIS dengan di Cloudinary
         const uploadData = new FormData();
         uploadData.append("file", compressedFile);
         uploadData.append("upload_preset", uploadPreset);
 
-        // Upload langsung dari browser ke Cloudinary (Direct Upload)
         const cloudinaryRes = await fetch(
           `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
           { method: "POST", body: uploadData }
@@ -62,34 +77,40 @@ export default function LaporanFormClient() {
 
         const cloudinaryData = await cloudinaryRes.json();
         
-        if (cloudinaryData.secure_url) {
-          finalPhotoUrl = cloudinaryData.secure_url;
-        } else {
-          throw new Error("Gagal mendapatkan URL foto dari Cloudinary.");
+        // --- DEBUG 2: Cek Error Cloudinary ---
+        if (!cloudinaryRes.ok) {
+            // Tampilkan pesan error ASLI dari Cloudinary ke layar HP
+            const errorMsg = cloudinaryData.error?.message || "Unknown Cloudinary Error";
+            throw new Error(`Gagal Upload Cloudinary: ${errorMsg}`);
         }
+        
+        finalPhotoUrl = cloudinaryData.secure_url;
       }
 
-      // 3. KIRIM DATA TEKS KE DATABASE
+      // 3. KIRIM DATA KE DATABASE
+      setMessage("⏳ Menyimpan data laporan...");
+      
       const dataToSend = new FormData();
       dataToSend.append("category", formData.get("category") as string);
       dataToSend.append("description", formData.get("description") as string);
       dataToSend.append("location", selectedLocation.address);
       dataToSend.append("latitude", selectedLocation.lat.toString());
       dataToSend.append("longitude", selectedLocation.lng.toString());
-      dataToSend.append("photoUrl", finalPhotoUrl); // Kirim URL hasil upload
+      dataToSend.append("photoUrl", finalPhotoUrl);
 
       const res = await createReportAction(dataToSend);
       
       if (res?.success) {
-        setMessage("✅ Berhasil dikirim! Silakan cek menu Riwayat.");
+        setMessage("✅ BERHASIL! Laporan terkirim.");
         formRef.current?.reset();
         setSelectedLocation(null);
       } else {
-        setMessage("❌ " + (res?.message || "Gagal menyimpan laporan."));
+        throw new Error(`Gagal Database: ${res?.message}`);
       }
-    } catch (err) {
-      console.error("Error Pengiriman:", err);
-      setMessage("❌ Gagal mengirim. Pastikan Upload Preset Cloudinary adalah 'Unsigned'.");
+    } catch (err: any) {
+      console.error("Error Debug:", err);
+      // Tampilkan error lengkap di layar
+      setMessage(`❌ ERROR: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -156,14 +177,14 @@ export default function LaporanFormClient() {
             disabled={loading}
             className="w-full bg-[#1f6f3f] text-white font-bold py-3 rounded-xl hover:bg-[#185632] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {loading ? "🔄 Memproses Laporan..." : "Kirim Laporan"}
+            {loading ? "🔄 Memproses..." : "Kirim Laporan"}
           </button>
         </form>
 
-        {/* PESAN STATUS */}
+        {/* PESAN STATUS (Kotak Pesan Error/Sukses) */}
         {message && (
-          <div className={`mt-4 p-3 rounded-lg text-center text-sm font-medium ${
-            message.includes("✅") ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+          <div className={`mt-4 p-4 rounded-lg text-center text-sm font-bold break-words ${
+            message.includes("✅") ? "bg-green-100 text-green-800 border border-green-200" : "bg-red-100 text-red-800 border border-red-200"
           }`}>
             {message}
           </div>
