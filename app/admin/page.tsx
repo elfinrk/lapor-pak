@@ -2,11 +2,24 @@ import {
   getAllReports,
   getReportStats,
   updateReportStatus,
-  deleteReportAction, // Tambahkan import ini
+  deleteReportAction,
 } from "@/actions/report.actions";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+
+// --- HELPER: FORMAT TANGGAL KE WIB ---
+const formatTanggalWIB = (isoString: string) => {
+  if (!isoString) return "-";
+  return new Date(isoString).toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta", // Wajib set ke Jakarta agar WIB
+    day: "numeric",
+    month: "short", // Contoh: 25 Des
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false, // Format 24 jam
+  });
+};
 
 export default async function AdminPage() {
   const user = await getCurrentUser();
@@ -27,16 +40,6 @@ export default async function AdminPage() {
     const status = formData.get("status") as any;
     await updateReportStatus(id, status);
     revalidatePath("/admin");
-  }
-
-  // Server Action untuk Hapus
-  async function deleteReport(formData: FormData) {
-    "use server";
-    const id = formData.get("id") as string;
-    if (confirm("Apakah Anda yakin ingin menghapus laporan ini?")) {
-       await deleteReportAction(id);
-       revalidatePath("/admin");
-    }
   }
 
   return (
@@ -63,6 +66,7 @@ export default async function AdminPage() {
           </div>
         </section>
 
+        {/* TABLE SECTION */}
         <section className="bg-white/5 border border-slate-800 rounded-2xl p-6 overflow-hidden">
           <h1 className="text-2xl font-bold mb-6">Panel Admin</h1>
 
@@ -70,7 +74,7 @@ export default async function AdminPage() {
             <table className="w-full text-sm text-left border-separate border-spacing-y-2">
               <thead>
                 <tr className="text-slate-500 uppercase text-[10px] tracking-widest">
-                  <th className="px-4 py-3">Tanggal</th>
+                  <th className="px-4 py-3">Tanggal (WIB)</th>
                   <th className="px-4 py-3">Pelapor</th>
                   <th className="px-4 py-3">Kategori & Deskripsi</th>
                   <th className="px-4 py-3">Lokasi</th>
@@ -82,11 +86,10 @@ export default async function AdminPage() {
               <tbody>
                 {reports.map((report: any) => (
                   <tr key={report.id} className="bg-slate-900/50 hover:bg-slate-800/50 transition-all">
-                    {/* TANGGAL */}
-                    <td className="px-4 py-4 text-slate-400 whitespace-nowrap align-top">
-                      {new Date(report.createdAt).toLocaleString("id-ID", {
-                        day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
-                      })}
+                    
+                    {/* TANGGAL (SUDAH DIPERBAIKI) */}
+                    <td className="px-4 py-4 text-slate-400 whitespace-nowrap align-top font-mono text-xs">
+                      {formatTanggalWIB(report.createdAt)}
                     </td>
 
                     {/* PELAPOR */}
@@ -104,12 +107,12 @@ export default async function AdminPage() {
                       </p>
                     </td>
 
-                    {/* LOKASI (FIX: Tidak terpotong) */}
+                    {/* LOKASI */}
                     <td className="px-4 py-4 text-xs text-slate-300 min-w-[200px] max-w-[300px] whitespace-normal break-words leading-relaxed align-top">
                       {report.location}
                     </td>
 
-                    {/* BUKTI FOTO (FIX: Pemanggilan photoUrl) */}
+                    {/* BUKTI FOTO */}
                     <td className="px-4 py-4 align-top">
                       {report.photoUrl ? (
                         <a href={report.photoUrl} target="_blank" className="relative group block w-12 h-12">
@@ -135,8 +138,9 @@ export default async function AdminPage() {
                       </span>
                     </td>
 
-                    {/* AKSI (Update & Delete) */}
+                    {/* AKSI */}
                     <td className="px-4 py-4 text-right align-top space-y-2">
+                      {/* FORM UPDATE STATUS */}
                       <form action={changeStatus} className="flex items-center justify-end gap-2">
                         <input type="hidden" name="id" value={report.id} />
                         <select 
@@ -153,6 +157,7 @@ export default async function AdminPage() {
                         </button>
                       </form>
                       
+                      {/* FORM DELETE (Tanpa Confirm karena Server Component) */}
                       <form action={async (fd) => {
                         "use server";
                         await deleteReportAction(fd.get("id") as string);

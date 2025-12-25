@@ -6,14 +6,9 @@ import { User } from "@/models/user.model";
 import { getCurrentUser } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 
-/**
- * Menerima data laporan.
- * Foto sudah diupload di client, jadi kita hanya menerima photoUrl (string).
- */
 export async function createReportAction(formData: FormData) {
   const user = await getCurrentUser();
   
-  // PROTEKSI GANDA: Cek lagi di sini
   if (!user) {
     return { success: false, message: "Akses ditolak. Anda harus login." };
   }
@@ -22,8 +17,15 @@ export async function createReportAction(formData: FormData) {
   const location = String(formData.get("location") || "").trim();
   const description = String(formData.get("description") || "").trim();
   
-  // Ambil photoUrl yang dikirim dari LaporanFormClient (Direct Upload)
+  // Ambil photoUrl
   const photoUrl = String(formData.get("photoUrl") || "").trim();
+
+  // --- CEK LOG DI VERCEL ---
+  console.log("=== SERVER ACTION RECEIVED ===");
+  console.log("User:", user.name);
+  console.log("Category:", category);
+  console.log("PhotoURL:", photoUrl); // <--- KITA LIHAT INI NANTI
+  // -------------------------
   
   if (!category || !location || !description) {
     return { success: false, message: "Semua field wajib diisi." };
@@ -37,11 +39,10 @@ export async function createReportAction(formData: FormData) {
       category,
       location,
       description,
-      photoUrl, // Menyimpan URL Cloudinary langsung ke database
+      photoUrl, // Pastikan ini sesuai dengan models/report.model.ts
       status: "pending",
     });
 
-    // Segarkan data di halaman terkait
     revalidatePath("/dashboard");
     revalidatePath("/admin");
 
@@ -56,9 +57,7 @@ export async function createReportAction(formData: FormData) {
   }
 }
 
-/**
- * Mengambil semua laporan untuk Panel Admin (dengan nama pelapor)
- */
+// ... Sisanya (getAllReports, dll) biarkan sama ...
 export async function getAllReports() {
   try {
     await connectDB();
@@ -76,7 +75,7 @@ export async function getAllReports() {
       description: r.description,
       status: r.status,
       createdAt: r.createdAt.toISOString(),
-      photoUrl: r.photoUrl,
+      photoUrl: r.photoUrl || "", // Pastikan properti ini terambil
     }));
   } catch (err) {
     console.error("Error getAllReports:", err);
@@ -84,9 +83,7 @@ export async function getAllReports() {
   }
 }
 
-/**
- * Mengambil laporan khusus milik user yang sedang login
- */
+// ... Function lainnya (getReportsForUser, getReportStats, dll) tetap sama ...
 export async function getReportsForUser(userId: string) {
   try {
     await connectDB();
@@ -110,9 +107,6 @@ export async function getReportsForUser(userId: string) {
   }
 }
 
-/**
- * Mengambil statistik laporan untuk Panel Admin
- */
 export async function getReportStats() {
   try {
     await connectDB();
@@ -127,9 +121,6 @@ export async function getReportStats() {
   }
 }
 
-/**
- * Update status laporan oleh Admin
- */
 export async function updateReportStatus(id: string, status: string) {
   try {
     await connectDB();
@@ -142,9 +133,6 @@ export async function updateReportStatus(id: string, status: string) {
   }
 }
 
-/**
- * Menghapus laporan oleh Admin
- */
 export async function deleteReportAction(id: string) {
   try {
     await connectDB();

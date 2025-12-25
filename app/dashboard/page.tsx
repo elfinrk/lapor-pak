@@ -3,14 +3,31 @@ import { getCurrentUser } from "@/lib/auth";
 import { getReportsForUser } from "@/actions/report.actions";
 import Link from "next/link";
 
+// --- FIX: FORMAT TANGGAL KE WIB ---
 function formatTanggal(date: string | Date) {
   const d = new Date(date);
-  return d.toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta", // KUNCI: Paksa ke zona waktu Jakarta
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false, // Format 24 jam
+  });
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const color = status === "selesai" ? "bg-green-100 text-green-700 border-green-200" : status === "proses" ? "bg-yellow-100 text-yellow-700 border-yellow-200" : "bg-slate-100 text-slate-700 border-slate-200";
-  return <span className={`px-2 py-1 rounded text-xs font-bold border ${color} uppercase`}>{status}</span>;
+  const color = 
+    status === "selesai" ? "bg-green-100 text-green-700 border-green-200" : 
+    status === "proses" ? "bg-yellow-100 text-yellow-700 border-yellow-200" : 
+    "bg-slate-100 text-slate-700 border-slate-200";
+  
+  return (
+    <span className={`px-2 py-1 rounded text-xs font-bold border ${color} uppercase`}>
+      {status}
+    </span>
+  );
 }
 
 export default async function DashboardPage() {
@@ -37,7 +54,7 @@ export default async function DashboardPage() {
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                   <tr>
-                    <th className="px-6 py-3">Tanggal</th>
+                    <th className="px-6 py-3">Tanggal (WIB)</th>
                     <th className="px-6 py-3">Foto</th>
                     <th className="px-6 py-3">Kategori</th>
                     <th className="px-6 py-3">Lokasi</th>
@@ -48,7 +65,11 @@ export default async function DashboardPage() {
                 <tbody className="divide-y divide-slate-100">
                   {reports.map((report: any) => (
                     <tr key={report.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 text-slate-600">{formatTanggal(report.createdAt)}</td>
+                      {/* TANGGAL YANG SUDAH DIPERBAIKI */}
+                      <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
+                        {formatTanggal(report.createdAt)}
+                      </td>
+                      
                       <td className="px-6 py-4">
                         {report.photoUrl ? (
                           <a href={report.photoUrl} target="_blank" className="block w-12 h-12 rounded overflow-hidden border border-slate-200 hover:border-green-500">
@@ -58,9 +79,13 @@ export default async function DashboardPage() {
                         ) : <span className="text-xs text-slate-400 italic">Tanpa foto</span>}
                       </td>
                       <td className="px-6 py-4 text-slate-700 capitalize font-medium">{report.category}</td>
-                      <td className="px-6 py-4 text-slate-600">{report.location}</td>
+                      <td className="px-6 py-4 text-slate-600 max-w-[200px] truncate" title={report.location}>
+                        {report.location}
+                      </td>
                       <td className="px-6 py-4"><StatusBadge status={report.status} /></td>
-                      <td className="px-6 py-4 text-slate-500 max-w-xs truncate">{report.description}</td>
+                      <td className="px-6 py-4 text-slate-500 max-w-xs truncate" title={report.description}>
+                        {report.description}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
