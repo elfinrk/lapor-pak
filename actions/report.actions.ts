@@ -2,6 +2,7 @@
 
 import { connectDB } from "@/lib/db";
 import { Report } from "@/models/report.model";
+import { User } from "@/models/user.model"; // Wajib import model User untuk populate
 import { getCurrentUser } from "@/lib/auth";
 import { uploadImageBuffer, REPORT_FOLDER } from "@/lib/cloudinary";
 import { revalidatePath } from "next/cache";
@@ -25,7 +26,6 @@ export async function createReportAction(formData: FormData) {
 
   if (photoFile && photoFile.size > 0) {
     try {
-      // Convert file ke Buffer agar bisa diupload
       const buffer = Buffer.from(await photoFile.arrayBuffer());
       photoUrl = await uploadImageBuffer(buffer, REPORT_FOLDER);
     } catch (err) {
@@ -38,11 +38,11 @@ export async function createReportAction(formData: FormData) {
     await connectDB();
 
     const report = await Report.create({
-      userId: user.id,
+      userId: user.id, // Pastikan di model Report field-nya bernama 'userId'
       category,
       location,
       description,
-      photoUrl, // Simpan URL foto ke database
+      photoUrl, 
       status: "pending",
     });
 
@@ -59,40 +59,28 @@ export async function createReportAction(formData: FormData) {
   }
 }
 
-// --- FUNGSI AMBIL DATA (PENTING: Tambahkan photoUrl) ---
-
 export async function getAllReports() {
   try {
     await connectDB();
-    const reports = await Report.find().sort({ createdAt: -1 }).lean();
-    return reports.map((r: any) => ({
-      id: r._id.toString(),
-      category: r.category,
-      location: r.location,
-      description: r.description,
-      status: r.status,
-      createdAt: r.createdAt,
-      photoUrl: r.photoUrl, // <--- WAJIB ADA
-    }));
-  } catch (err) {
-    return [];
-  }
-}
+    
+    // PENTING: .populate('userId', 'name') mengambil field 'name' dari tabel User
+    const reports = await Report.find()
+      .populate("userId", "name") 
+      .sort({ createdAt: -1 })
+      .lean();
 
-export async function getReportsForUser(userId: string) {
-  try {
-    await connectDB();
-    const reports = await Report.find({ userId }).sort({ createdAt: -1 }).lean();
     return reports.map((r: any) => ({
       id: r._id.toString(),
+      authorName: r.userId?.name || "User Tidak Ditemukan", // Ini agar tidak "Anonim"
       category: r.category,
       location: r.location,
       description: r.description,
       status: r.status,
-      createdAt: r.createdAt,
-      photoUrl: r.photoUrl, // <--- WAJIB ADA
+      createdAt: r.createdAt.toISOString(),
+      photoUrl: r.photoUrl, // URL gambar dari Cloudinary
     }));
   } catch (err) {
+    console.error("Error getAllReports:", err);
     return [];
   }
 }
@@ -112,3 +100,49 @@ export async function updateReportStatus(id: string, status: string) {
   await Report.findByIdAndUpdate(id, { status });
   return { success: true };
 }
+
+export async function deleteReportAction(id: string) {
+  try {
+    await connectDB();
+    // Jika ada sistem hapus file Cloudinary, bisa ditambahkan di sini
+    await Report.findByIdAndDelete(id);
+    return { success: true, message: "Laporan dihapus" };
+  } catch (err) {
+    return { success: false, message: "Gagal menghapus" };
+  }
+}
+
+// actions/report.actions.ts
+
+// ... (kode lainnya seperti connectDB, Report model, dll)
+
+/**
+ * Fungsi untuk mengambil daftar laporan berdasarkan ID User tertentu
+ * Digunakan di halaman Dashboard
+ */
+export async function getReportsForUser(userId: string) {
+  try {
+    await connectDB(); // Pastikan koneksi DB terpanggil
+
+    // Mencari laporan yang memiliki userId sesuai dengan parameter
+    const reports = await Report.find({ userId })
+      .sort({ createdAt: -1 }) // Urutkan dari yang terbaru
+      .lean();
+
+    // Mapping data agar aman dikirim ke Client Component
+    return reports.map((r: any) => ({
+      id: r._id.toString(),
+      category: r.category,
+      location: r.location,
+      description: r.description,
+      status: r.status,
+      createdAt: r.createdAt.toISOString(), // Convert ke string untuk menghindari error serialisasi
+      photoUrl: r.photoUrl || "",
+    }));
+  } catch (err) {
+    console.error("Gagal mengambil laporan user:", err);
+    return []; // Kembalikan array kosong jika terjadi error
+  }
+}
+
+// ... (fungsi lainnya seperti getAllReports, getReportStats, dll)
